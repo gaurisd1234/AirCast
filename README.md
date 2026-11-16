@@ -1,23 +1,87 @@
 # AirCast: Multi-Horizon Air Quality Forecasting in PyTorch
 
-AirCast is a strictly leak-free, multi-horizon air quality forecasting benchmark in PyTorch. It forecasts fine particulate matter ($\text{PM}_{2.5}$) concentrations up to 24 hours into the future using 5 years of hourly atmospheric observations (2010–2014, $N = 43,800$ hours) from the Beijing benchmark dataset.
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![Tests Passing](https://img.shields.io/badge/tests-37%20passed-brightgreen.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-The system rigorously benchmarks classical statistical heuristics (**Persistence**, **Seasonal Naive 24h & 168h**, **Moving Average**, **Multi-Output Ridge Regression**), tree ensembles (**HistGradientBoostingRegressor**), and recurrent deep neural networks (**Vanilla RNN** and **Long Short-Term Memory / LSTM**).
+AirCast is a strictly leak-free, reproducible benchmark for multi-horizon fine particulate matter ($\text{PM}_{2.5}$) air quality forecasting up to 24 hours ahead ($t+1, \dots, t+24$). Built in PyTorch, it evaluates classical statistical heuristics, tree-based gradient boosting, and recurrent neural networks (Vanilla RNN and LSTM) on 5 years of hourly atmospheric observations from the UCI Beijing PM2.5 benchmark dataset.
 
-> **Evaluation Honesty Disclosure:**
+> **Evaluation Honesty Disclosure:**  
 > The test set was used for the initial evaluation and reused for multi-seed runs and the added baselines with frozen configurations; no hyperparameter was changed after viewing test results.
 
 ---
 
-## 1. Official Test Set Benchmark
+## 1. Problem Formulation
 
-> **Protocol & Evaluation Notes:**
-> - **Validation-Selected Headline Models:** The headline neural network configurations (**Vanilla RNN L=24 Tuned** and **LSTM L=24 Tuned**) and the GBDT model were tuned and selected strictly based on **Validation** performance. The $L=72$ Vanilla RNN is reported solely as a clearly labeled ablation row (**Vanilla RNN Ablation: longer lookback L=72**).
-> - **Evaluation Population:** Evaluated exclusively on the **5,839 test sliding windows whose target values are 100% real ground-truth observations** (excluding 636 windows containing forward-filled target values).
-> - **"Overall" Definition:** "Overall" denotes the unweighted arithmetic average across all 24 individual forecast horizons ($t+1$ through $t+24$). Per-horizon MAEs for all 24 horizons are preserved in [results/per_horizon_all.csv](results/per_horizon_all.csv).
-> - **No Test-Score Bolding or Ranking:** In accordance with rigorous scientific reporting standards, models are presented in architectural order without bolding or ranking by test performance.
+Fine particulate matter with an aerodynamic diameter $\le 2.5\,\mu\text{m}$ ($\text{PM}_{2.5}$) poses severe health risks due to its ability to penetrate deep into the lungs and bloodstream. Public health interventions (e.g. school closures, factory emission curbs, outdoor activity advisories) cannot rely solely on 1-hour-ahead forecasts—they require reliable **multi-horizon predictions across the full diurnal cycle ($t+1$ to $t+24$ hours ahead)**.
 
-### Overall Benchmark Metrics (Held-Out Test: April – December 2014, $N = 5,839$ Real Observation Windows)
+Formally, at forecast origin $t$, given a historical lookback window of $L$ hours of pollutant and meteorological covariates:
+$$X_t = \left[x_{t-L+1}, x_{t-L+2}, \dots, x_t\right] \in \mathbb{R}^{L \times F}$$
+we forecast the multi-horizon target trajectory across all future 24 hours simultaneously:
+$$\hat{Y}_t = \left[\hat{y}_{t+1}, \hat{y}_{t+2}, \dots, \hat{y}_{t+24}\right] \in \mathbb{R}^{24}$$
+
+---
+
+## 2. Dataset & Citation
+
+We benchmark on the **UCI Beijing PM2.5 Dataset**:
+
+- **Location:** Hourly $\text{PM}_{2.5}$ concentration ($\mu\text{g/m}^3$) measured at the US Embassy in Chaoyang District, Beijing, China ($39.95^\circ\text{N}, 116.47^\circ\text{E}$).
+- **Meteorology:** Hourly weather variables collected simultaneously at Beijing Capital International Airport: Dew Point (`DEWP`), Temperature (`TEMP`), Atmospheric Pressure (`PRES`), Combined Wind Direction (`cbwd`), Cumulative Wind Speed (`Iws`), Cumulative Hours of Snow (`Is`), and Cumulative Hours of Rain (`Ir`).
+- **Temporal Span:** January 1, 2010 00:00 to December 31, 2014 23:00 ($N = 43,824$ raw hourly observations).
+- **Academic Citation:**
+  > Liang, X., Zou, T., Guo, B., Li, S., Zhang, X., Zhang, S., Huang, H., & Chen, S. X. (2015). *Assessing Beijing's PM2.5 pollution: severity, weather impact, APEC and summer holiday effects*. **Proceedings of the Royal Society A: Mathematical, Physical and Engineering Sciences**, 471(2182), 20150257. [https://doi.org/10.1098/rspa.2015.0257](https://doi.org/10.1098/rspa.2015.0257)  
+  > UCI Machine Learning Repository: [https://archive.ics.uci.edu/dataset/381/beijing+pm2+5+data](https://archive.ics.uci.edu/dataset/381/beijing+pm2+5+data)
+
+---
+
+## 3. Leakage-Safe Experimental Design
+
+Time series forecasting is uniquely vulnerable to subtle forms of data leakage that invalidate real-world performance. AirCast enforces four strict zero-leakage protocols:
+
+```
+[2010-01-02 to 2013-07-02: TRAIN (70%, N=30,659)]  --->  [2013-07-02 to 2014-04-02: VAL (15%, N=6,571)]  --->  [2014-04-02 to 2014-12-31: TEST (15%, N=6,570)]
+     │                                                               │                                                             │
+     ▼                                                               ▼                                                             ▼
+Fit StandardScaler (μ=99.47, σ=92.12)                      Tune Hyperparameters & Lookback                            Evaluate Held-Out Performance Once
+Fit Imputation Median (74.0 μg/m³)                          Select Winning Architectures                               Mask to 5,839 Real Observation Windows
+```
+
+1. **Strict Chronological Splitting:**
+   - **Train:** 2010-01-02 00:00 to 2013-07-02 10:00 ($N = 30,659$ rows, 3.5 years).
+   - **Validation:** 2013-07-02 11:00 to 2014-04-02 05:00 ($N = 6,571$ rows, 9 months).
+   - **Held-Out Test:** 2014-04-02 06:00 to 2014-12-31 23:00 ($N = 6,570$ rows, 9 months).
+   - *Zero index or timestamp overlap ($T_{\text{train}} < T_{\text{val}} < T_{\text{test}}$).*
+2. **Train-Only Scalers and Imputers:**
+   - The initial 24 hours of 2010-01-01 are dropped (sensor calibration period, zero readings).
+   - Missing $\text{PM}_{2.5}$ entries in train (6.19%), val (0.88%), and test (1.34%) are forward-filled causally.
+   - `StandardScaler` is fitted **strictly on `train_df`** ($\mu = 99.4695\,\mu\text{g/m}^3, \sigma = 92.1181\,\mu\text{g/m}^3$) and applied via `.transform()`. Test/Val mutations cause zero parameter shift.
+3. **Causal Sliding Windows with Non-Overlapping Boundaries:**
+   - Lookback inputs cover $[t-L+1 : t]$; target trajectories cover $[t+1 : t+24]$. No target timestamp exists inside the input window.
+4. **Real-Observation Test Masking:**
+   - Of the 6,475 test sliding windows, 636 contain at least one forward-filled target observation. Final test metrics are computed **exclusively on the 5,839 windows whose target values are 100% genuine sensor measurements**.
+
+---
+
+## 4. Models Benchmarked
+
+1. **Persistence (Naive Baseline):** Predicts $\hat{y}_{t+h} = y_t$ for all $h \in \{1, \dots, 24\}$, exploiting short-term atmospheric inertia.
+2. **Seasonal Naive (24h & 168h):** Predicts $\hat{y}_{t+h} = y_{t+h-24}$ (diurnal rhythm) or $\hat{y}_{t+h} = y_{t+h-168}$ (weekly rhythm).
+3. **Moving Average (24h):** Predicts the arithmetic mean of the target over the preceding 24 hours.
+4. **Ridge Regression ($\alpha=10.0$):** Multi-output $L_2$-penalized linear model on flattened lag, weather, and cyclical features.
+5. **HistGradientBoostingRegressor (Val-Tuned):** Multi-output histogram-based gradient boosted decision trees (`max_iter=50, lr=0.1, min_samples_leaf=20`).
+6. **Vanilla RNN (L=24, Val-Tuned Headline):** 2-layer Elman RNN with $\tanh$ updates, hidden dimension 64, dropout 0.2, linear multi-horizon projection head.
+7. **LSTM (L=24, Val-Tuned Headline):** 2-layer LSTM with gated constant error carousel, hidden dimension 64, dropout 0.2.
+8. **Vanilla RNN (Ablation: longer lookback L=72):** Same architecture evaluated with 72-hour historical lookback.
+
+---
+
+## 5. Official Test Benchmark Results
+
+*All values loaded directly from `results/final_test_metrics.csv` and `results/multiseed_results.json` ($N = 5,839$ real observation windows). "Overall" denotes the unweighted arithmetic average across all 24 horizons ($t+1$ to $t+24$):*
+
+### Overall Performance Table
 
 | Model (Family / Category) | Overall MAE ($\mu\text{g/m}^3$) | Overall RMSE ($\mu\text{g/m}^3$) | Overall $R^2$ | Overall sMAPE (%) |
 | :--- | :---: | :---: | :---: | :---: |
@@ -33,7 +97,7 @@ The system rigorously benchmarks classical statistical heuristics (**Persistence
 
 ---
 
-### Per-Horizon MAE Breakdown ($\mu\text{g/m}^3$) for Focal Horizons
+### Per-Horizon MAE Breakdown ($\mu\text{g/m}^3$) Across Focal Horizons
 
 | Model (Family / Category) | $t+1$ hour | $t+6$ hours | $t+12$ hours | $t+24$ hours |
 | :--- | :---: | :---: | :---: | :---: |
@@ -47,43 +111,30 @@ The system rigorously benchmarks classical statistical heuristics (**Persistence
 | LSTM (L=24, Val-Tuned Headline) | 21.1678 | 34.1671 | 42.4470 | 52.4101 |
 | Vanilla RNN (Ablation: longer lookback L=72) | 13.9881 | 32.0653 | 42.6672 | 52.1592 |
 
-*Full per-horizon errors across all 24 horizons are available in [results/per_horizon_all.csv](results/per_horizon_all.csv).*
+*Full errors for all 24 horizons are available in [results/per_horizon_all.csv](results/per_horizon_all.csv).*
 
 ---
 
-## 2. Multi-Seed Retraining (Mean ± Standard Deviation)
+### Multi-Seed Retraining (Mean ± Standard Deviation Across 5 Seeds)
 
-To quantify initialization and mini-batch shuffle variance, the frozen validation-selected Vanilla RNN and LSTM architectures were retrained across **5 fixed seeds** (`42, 43, 44, 45, 46`) without changing any hyperparameters.
+Retrained with frozen validation configurations across seeds `[42, 43, 44, 45, 46]`:
 
-### Overall Performance Across 5 Seeds ($N = 5,839$ Real Observation Windows)
-
-| Model | Overall MAE ($\text{mean} \pm \text{std}$) | Overall RMSE ($\text{mean} \pm \text{std}$) | Overall sMAPE ($\text{mean} \pm \text{std}$) |
-| :--- | :---: | :---: | :---: |
-| **Vanilla RNN (L=24)** | 40.0283 ± 0.6968 | 58.4393 ± 0.4773 | 53.26% ± 1.73% |
-| **LSTM (L=24)** | 40.6652 ± 0.3218 | 59.3191 ± 0.6705 | 52.24% ± 0.48% |
-
-### Per-Horizon MAE Breakdown Across 5 Seeds ($\mu\text{g/m}^3$)
-
-| Model | $t+1$ hour | $t+6$ hours | $t+12$ hours | $t+24$ hours |
-| :--- | :---: | :---: | :---: | :---: |
-| **Vanilla RNN (L=24)** | 14.98 ± 2.27 | 32.01 ± 0.63 | 42.31 ± 0.85 | 52.84 ± 1.12 |
-| **LSTM (L=24)** | 18.65 ± 1.74 | 32.89 ± 0.76 | 42.48 ± 0.32 | 53.11 ± 0.66 |
-
-*Key finding:* LSTM exhibits lower variance across random seeds ($\sigma_{\text{MAE}} = 0.32$ vs $0.70\,\mu\text{g/m}^3$), indicating smoother gradient descent, but Vanilla RNN achieves a slightly lower mean error ($40.03$ vs $40.67\,\mu\text{g/m}^3$).
+| Model | Overall MAE ($\text{mean} \pm \text{std}$) | Overall RMSE ($\text{mean} \pm \text{std}$) | Overall sMAPE ($\text{mean} \pm \text{std}$) | $t+1$ MAE | $t+24$ MAE |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Vanilla RNN (L=24)** | 40.0283 ± 0.6968 | 58.4393 ± 0.4773 | 53.26% ± 1.73% | 14.98 ± 2.27 | 52.84 ± 1.12 |
+| **LSTM (L=24)** | 40.6652 ± 0.3218 | 59.3191 ± 0.6705 | 52.24% ± 0.48% | 18.65 ± 1.74 | 53.11 ± 0.66 |
 
 ---
 
-## 3. Block Bootstrap 95% Confidence Intervals (24-Hour Blocks, 1,000 Resamples)
-
-Because time-series forecasting errors violate independence assumptions due to serial correlation, statistical significance was assessed via a **moving block bootstrap** (24-hour block length, 1,000 resamples).
+### 24-Hour Block Bootstrap 95% Confidence Intervals (1,000 Resamples)
 
 $$\Delta \text{MAE} = \text{MAE}_A - \text{MAE}_B$$
 
-| Comparison | Mean Difference ($\mu\text{g/m}^3$) | 95% CI Lower | 95% CI Upper | Statistically Significant? |
+| Comparison | Mean Difference | 95% CI Lower | 95% CI Upper | Statistically Significant? |
 | :--- | :---: | :---: | :---: | :---: |
 | **LSTM minus RNN (Seed 42)** | +0.6862 | +0.0280 | +1.2957 | **YES ($p < 0.05$)** |
 | **RNN minus Ridge (Seed 42)** | -1.6337 | -2.3407 | -0.9630 | **YES ($p < 0.05$)** |
-| **RNN minus Gradient Boosting (Seed 42)** | +0.3864 | -0.5551 | +1.3282 | **NO (crosses 0)** |
+| **RNN minus HistGBDT (Seed 42)** | +0.3864 | -0.5551 | +1.3282 | **NO (crosses 0)** |
 | **RNN minus Persistence (Seed 42)** | -4.4179 | -6.3119 | -2.6419 | **YES ($p < 0.05$)** |
 | *Ensemble:* LSTM minus RNN (5-Seed Mean) | +0.6724 | -0.0828 | +1.3576 | **NO (crosses 0)** |
 | *Ensemble:* RNN minus Ridge (5-Seed Mean) | -2.5629 | -3.3268 | -1.9142 | **YES ($p < 0.05$)** |
@@ -92,52 +143,125 @@ $$\Delta \text{MAE} = \text{MAE}_A - \text{MAE}_B$$
 
 ---
 
-## 4. Honest Scientific Summary
+## 6. Lookback Ablation: Validation vs. Test Disagreement
 
-1. **Which differences are distinguishable from noise?**
-   - **RNN vs. Ridge:** **Yes ($p < 0.05$).** Both single-seed and multi-seed CIs exclude zero ($[-2.34, -0.96]$ and $[-3.33, -1.91]$). Non-linear recurrent models yield a genuine, statistically significant improvement over regularized linear autoregression.
-   - **RNN vs. Persistence:** **Yes ($p < 0.05$).** CIs exclude zero ($[-6.31, -2.64]$). Recurrent networks are decisively superior to naive persistence overall.
-   - **RNN vs. Gradient Boosting:** **No.** The 95% CI for the difference crosses zero in both single-seed ($[-0.56, +1.33]$) and 5-seed ensemble tests ($[-1.55, +0.40]$). The performance difference between Vanilla RNN and HistGradientBoosting is indistinguishable from random sampling noise.
-   - **LSTM vs. Vanilla RNN:** **No.** While seed 42 narrowly excluded zero ($[+0.03, +1.30]$), the 5-seed ensemble CI crosses zero ($[-0.08, +1.36]$). The LSTM's gated memory cells offer no statistically significant accuracy benefit over a Vanilla RNN on this 24-hour air quality benchmark.
-2. **Do the deep recurrent models beat gradient boosting?**
-   - **No.** `HistGradientBoostingRegressor` achieves an overall test MAE of **39.7841 $\mu\text{g/m}^3$**, which is nominally superior to single-seed Vanilla RNN ($40.17\,\mu\text{g/m}^3$) and single-seed LSTM ($40.86\,\mu\text{g/m}^3$), and statistically on par with the 5-seed RNN ensemble ($39.24\,\mu\text{g/m}^3$). Gradient boosting trains substantially faster and achieves competitive accuracy without recurrent backpropagation through time.
-3. **At which horizons does persistence still win?**
-   - **At $t+1$ hour**, Persistence achieves a test MAE of **11.1192 $\mu\text{g/m}^3$**, outperforming single-seed Vanilla RNN ($12.05\,\mu\text{g/m}^3$) and LSTM ($21.17\,\mu\text{g/m}^3$), as well as their 5-seed means ($14.98$ and $18.65\,\mu\text{g/m}^3$). Only `HistGradientBoosting` narrowly matches/beats Persistence at $t+1$ ($10.78\,\mu\text{g/m}^3$). Persistence wins at $t+1$ due to short-term atmospheric inertia, but degrades rapidly at $t \ge 6$ ($35.51$ at $t+6$, $48.76$ at $t+12$, $59.10\,\mu\text{g/m}^3$ at $t+24$).
+During hyperparameter tuning on the **Validation set**, $L=24$ performed better than $L=72$:
+- **Validation:** Vanilla RNN $L=24$ (**Val MAE: 47.4301**) beat $L=72$ (**Val MAE: 48.7534**).
+- **Test:** Vanilla RNN $L=72$ (**Test MAE: 39.9202**) scored slightly lower than $L=24$ (**Test MAE: 40.1705**).
+
+**Scientific Interpretation:** Validation and test sets disagree on which lookback length is superior. On validation (July 2013 – April 2014), $L=24$ yielded lower error; on test (April 2014 – December 2014), $L=72$ was lower by $0.25\,\mu\text{g/m}^3$. This divergence demonstrates that seasonal distribution shifts between years alter optimal lookback length. $L=24$ remains the headline model because it was selected on validation under our zero-leakage protocol.
 
 ---
 
-## 5. Visualizations
+## 7. Honest Limitations
 
-### Per-Horizon MAE Comparison
-![Per-Horizon MAE Comparison](figures/per_horizon_mae_comparison.png)
-
-### Sample Multi-Step Forecast Trajectories
-![Forecast Trajectories](figures/forecast_trajectories_sample.png)
-
-### Error Residual Distributions
-![Residual Distributions](figures/residual_distributions.png)
-
-### Training & Validation Loss Dynamics
-![Training Loss Curves](figures/training_loss_curves.png)
+1. **Single Monitoring Station:** Data originates from a single sensor on the roof of the US Embassy in Chaoyang District, Beijing. Local traffic microclimates and street-canyon effects are not captured, and spatial generalization across the metropolitan area cannot be assessed.
+2. **Single Climate Basin:** Beijing lies in an alluvial plain surrounded by the Yanshan and Taihang mountains, creating a semi-enclosed basin prone to severe winter temperature inversions and spring Gobi dust storms. Dynamics do not directly transfer to coastal, equatorial, or windy maritime cities.
+3. **Historical Regime (2010–2014):** The dataset precedes Beijing's aggressive 2017 coal-to-gas heating transition and heavy vehicle emission restrictions. Modern Beijing pollution levels are significantly lower, representing a distribution shift from the historical benchmark.
+4. **Missing Data Handling:** 1.34% of test $\text{PM}_{2.5}$ readings were missing and causally forward-filled. While evaluation was restricted to the 5,839 real-target windows to prevent evaluation on imputed numbers, an operational real-time system must handle sensor dropouts dynamically.
+5. **Untested Exogenous Covariates Hypothesis:** While it is hypothesized that recurrent models outperform Persistence at $t \ge 6$ by utilizing weather covariates (`Iws`, `PRES`, `DEWP`, `TEMP`), this remains an untested hypothesis because a controlled univariate ablation (removing weather features while keeping the recurrent architecture identical) was not conducted.
 
 ---
 
-## 6. Test Suite & Verification
+## 8. Visualizations
 
-The test suite contains **36 automated unit and integration tests** verifying data leakage protections, scaler/imputer isolation, non-overlapping splits, window alignment, real-observation filtering, new baselines, and block bootstrap logic:
+| Per-Horizon Error Bar Chart | Sample 24h Multi-Step Trajectories |
+| :---: | :---: |
+| ![Per-Horizon MAE Comparison](figures/per_horizon_mae_comparison.png) | ![Sample Trajectories](figures/forecast_trajectories_sample.png) |
+| **Residual Error Distributions** | **Training Loss Dynamics & Early Stopping** |
+| ![Residual Distributions](figures/residual_distributions.png) | ![Training Loss Curves](figures/training_loss_curves.png) |
+
+---
+
+## 9. How to Run
+
+### Setup Environment
+```powershell
+git clone https://github.com/your-username/AirCast.git
+cd AirCast
+pip install -r requirements.txt
+```
+
+### Quick Smoke Test (< 35 seconds)
+Verifies the complete pipeline end-to-end without waiting for long neural network retraining:
+```powershell
+python scripts/run_all.py --quick
+```
+
+### Full Reproduction Pipeline
+Reproduces data ingestion, baselines, GBDT tuning, RNN/LSTM training, multi-seed runs, test evaluation, block bootstrap, and plots:
+```powershell
+python scripts/run_all.py
+```
+
+### Run Unit and Integration Tests (37 Tests)
 ```powershell
 python -m pytest tests/
 ```
-Output:
+
+### Launch Interactive Streamlit Dashboard
+```powershell
+streamlit run app.py
+```
+*Opens interactive model selector, 24-hour horizon error curves, and test episode trajectory viewer in your browser.*
+
+---
+
+## 10. Repository File Structure
+
 ```text
-tests\test_baselines_metrics.py .....                                    [ 13%]
-tests\test_data.py .....                                                 [ 27%]
-tests\test_evaluation.py ..                                              [ 33%]
-tests\test_leakage_and_alignment.py .....                                [ 47%]
-tests\test_lstm.py ....                                                  [ 58%]
-tests\test_new_comparisons.py .....                                      [ 72%]
-tests\test_tuning.py ..                                                  [ 77%]
-tests\test_utils.py ....                                                 [ 88%]
-tests\test_vanilla_rnn.py ....                                           [100%]
-============================= 36 passed in 13.44s =============================
+AirCast/
+├── app.py                          # Interactive Streamlit dashboard
+├── requirements.txt                # Pinned dependencies
+├── configs/
+│   └── default_config.yaml         # Centralized hyperparameters & paths
+├── data/
+│   ├── raw_pollution.csv           # Cached Beijing PM2.5 dataset
+│   └── processed_pollution.csv     # Cleaned dataset with engineered features
+├── figures/                        # Repository-relative visualization figures
+│   ├── forecast_trajectories_sample.png
+│   ├── per_horizon_mae_comparison.png
+│   ├── residual_distributions.png
+│   └── training_loss_curves.png
+├── results/
+│   ├── baselines_val_results.json
+│   ├── bootstrap_results.json      # 95% Block bootstrap confidence intervals
+│   ├── final_test_metrics.csv      # Test metrics table on real observations
+│   ├── final_test_metrics.json     # Test metrics with missingness metadata
+│   ├── multiseed_results.json      # 5-seed empirical mean & std
+│   ├── new_baselines_results.json  # Seasonal Naive & HistGBDT metrics
+│   ├── per_horizon_all.csv         # Per-horizon MAE for all 24 horizons
+│   └── validation_tuning_results.json
+├── scripts/
+│   ├── run_all.py                  # Master reproduction script with --quick mode
+│   ├── prepare_data.py             # Ingestion & split validation
+│   ├── run_baselines.py            # Baseline execution & tuning
+│   ├── train_vanilla_rnn.py        # Vanilla RNN training loop
+│   ├── train_lstm.py               # LSTM training loop
+│   ├── tune_and_ablate.py          # Validation-only hyperparameter tuning
+│   ├── tune_and_train_new_baselines.py # Seasonal Naive & HistGBDT tuning
+│   ├── run_multiseed_evaluation.py # 5-seed retraining & variance reporting
+│   ├── run_block_bootstrap.py      # Moving block bootstrap 95% CIs
+│   ├── evaluate_test.py            # Final test evaluation on real targets
+│   └── generate_plots.py           # Publication-quality plotting script
+├── src/
+│   ├── baselines.py                # Persistence, Seasonal Naive, MA, Ridge, HistGBDT
+│   ├── data.py                     # Split, scale, cyclical encode, window
+│   ├── metrics.py                  # MAE, RMSE, R2, sMAPE calculations
+│   ├── models/
+│   │   ├── vanilla_rnn.py          # PyTorch Elman RNN architecture
+│   │   └── lstm.py                 # PyTorch LSTM architecture
+│   ├── trainer.py                  # Early stopping, gradient clip, training
+│   └── utils.py                    # Seeds, device selection, config I/O
+└── tests/
+    ├── test_app.py                 # Dashboard data loader unit tests
+    ├── test_baselines_metrics.py
+    ├── test_data.py
+    ├── test_evaluation.py
+    ├── test_leakage_and_alignment.py
+    ├── test_lstm.py
+    ├── test_new_comparisons.py
+    ├── test_tuning.py
+    ├── test_utils.py
+    └── test_vanilla_rnn.py
 ```
