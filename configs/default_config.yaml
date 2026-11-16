@@ -1,0 +1,37 @@
+# AirCast Default Project Configuration
+seed: 42
+
+data:
+  raw_url: "https://raw.githubusercontent.com/jbrownlee/Datasets/master/pollution.csv"
+  raw_path: "data/raw_pollution.csv"
+  processed_path: "data/processed_pollution.csv"
+  target_col: "pm2.5"
+  # Strictly chronological split ratios: 70% Train, 15% Validation, 15% Test
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  # Historical input window (lookback) and future prediction window (horizon)
+  lookback_hours: 72
+  max_horizon: 24
+  # Focal horizons to break down and compare in interview discussions
+  evaluation_horizons: [1, 6, 12, 24]
+
+training:
+  batch_size: 64
+  epochs: 25
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  patience: 5
+  clip_grad_norm: 1.0
+
+models:
+  vanilla_rnn:
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.2
+  lstm:
+    hidden_dim: 64
+    num_layers: 2
+    dropout: 0.2
+
+results_dir: "results"
