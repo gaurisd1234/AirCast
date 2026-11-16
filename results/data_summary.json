@@ -1,0 +1,46 @@
+{
+    "raw_rows": 43824,
+    "clean_rows": 43800,
+    "features": [
+        "pm2.5",
+        "DEWP",
+        "TEMP",
+        "PRES",
+        "Iws",
+        "Is",
+        "Ir",
+        "hour_sin",
+        "hour_cos",
+        "month_sin",
+        "month_cos",
+        "dayofweek_sin",
+        "dayofweek_cos",
+        "cbwd_NE",
+        "cbwd_NW",
+        "cbwd_SE",
+        "cbwd_cv"
+    ],
+    "num_features": 17,
+    "train_range": [
+        "2010-01-02 00:00:00",
+        "2013-07-02 10:00:00"
+    ],
+    "val_range": [
+        "2013-07-02 11:00:00",
+        "2014-04-02 05:00:00"
+    ],
+    "test_range": [
+        "2014-04-02 06:00:00",
+        "2014-12-31 23:00:00"
+    ],
+    "train_samples": 30564,
+    "val_samples": 6476,
+    "test_samples": 6475,
+    "lookback_hours": 72,
+    "max_horizon": 24,
+    "scaler_info": {
+        "target_mean": 99.46945432010176,
+        "target_std": 92.11812269463277,
+        "target_median": 74.0
+    }
+}
