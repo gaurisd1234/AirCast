@@ -33,11 +33,12 @@ def main():
     test_metrics = test_data["models"]
     y_true = np.load(os.path.join(results_dir, "test_y_true.npy"))
 
-    # Headline models selected on validation, plus ablation row
+    # Headline models selected on validation, plus baselines and ablation row
     models_to_plot = [
         ("Persistence", "Persistence (Naive)", "#7f7f7f"),
         ("MovingAverage_24h", "Moving Average (24h)", "#bcbd22"),
         ("Ridge_alpha10", "Ridge Regression (alpha=10)", "#1f77b4"),
+        ("HistGradientBoosting", "HistGradientBoosting (Val-Tuned)", "#17becf"),
         ("Vanilla_RNN_L24_Tuned", "Vanilla RNN (L=24, Val-Tuned)", "#ff7f0e"),
         ("LSTM_L24_Tuned", "LSTM (L=24, Val-Tuned)", "#2ca02c"),
         ("Vanilla_RNN_L72_Ablation", "Vanilla RNN (Ablation: L=72)", "#9467bd")
@@ -52,15 +53,15 @@ def main():
     # -------------------------------------------------------------
     # Plot 1: Per-Horizon MAE Comparison Bar Chart
     # -------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(11, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     horizons = ["t+1", "t+6", "t+12", "t+24"]
     x = np.arange(len(horizons))
-    width = 0.13
+    width = 0.11
 
     for idx, (m_key, m_label, color) in enumerate(models_to_plot):
         if m_key in test_metrics:
             maes = [test_metrics[m_key]["per_horizon"][h]["MAE"] for h in horizons]
-            ax.bar(x + (idx - 2.5) * width, maes, width, label=m_label, color=color, alpha=0.85)
+            ax.bar(x + (idx - 3.0) * width, maes, width, label=m_label, color=color, alpha=0.85)
 
     ax.set_ylabel("Mean Absolute Error (μg/m³)", fontsize=12, fontweight="bold")
     ax.set_xlabel("Forecast Horizon", fontsize=12, fontweight="bold")

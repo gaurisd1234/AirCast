@@ -215,21 +215,35 @@ def main():
     for model_name, preds in predictions_real.items():
         np.save(os.path.join(config["results_dir"], f"test_preds_{model_name}.npy"), preds)
 
+    # Load new baselines if previously computed
+    for new_m in ["SeasonalNaive_24h", "SeasonalNaive_168h", "HistGradientBoosting"]:
+        p_path = os.path.join(config["results_dir"], f"test_preds_{new_m}.npy")
+        if os.path.exists(p_path):
+            pred_arr = np.load(p_path)
+            predictions_real[new_m] = pred_arr
+            predictions_all[new_m] = pred_arr
+
     # 5. Compute Metrics on Real-Observation Windows
     model_order = [
         "Persistence",
+        "SeasonalNaive_24h",
+        "SeasonalNaive_168h",
         "MovingAverage_24h",
         "Ridge_alpha10",
+        "HistGradientBoosting",
         "Vanilla_RNN_L24_Tuned",
         "LSTM_L24_Tuned",
         "Vanilla_RNN_L72_Ablation"
     ]
+    # Filter to models present in predictions_real
+    model_order = [m for m in model_order if m in predictions_real]
 
     results_real = {}
     results_all = {}
     for m in model_order:
         results_real[m] = evaluate_forecasts(Y_test_real, predictions_real[m], eval_horizons)
-        results_all[m] = evaluate_forecasts(Y_test_all, predictions_all[m], eval_horizons)
+        if m in predictions_all and predictions_all[m].shape == Y_test_all.shape:
+            results_all[m] = evaluate_forecasts(Y_test_all, predictions_all[m], eval_horizons)
 
     # 6. Save per-horizon MAE for all 24 horizons
     df_all_24 = compute_all_24_horizons_mae(Y_test_real, predictions_real)
@@ -244,11 +258,15 @@ def main():
     print(f"{'Model':<30} | {'All Windows MAE':<16} | {'Real Only MAE':<16} | {'Difference':<12}")
     print("-" * 90)
     for m in model_order:
-        mae_all = results_all[m]["overall"]["MAE"]
-        mae_real = results_real[m]["overall"]["MAE"]
-        diff = mae_real - mae_all
-        sign = "+" if diff >= 0 else ""
-        print(f"{m:<30} | {mae_all:<16.4f} | {mae_real:<16.4f} | {sign}{diff:<11.4f}")
+        if m in results_all:
+            mae_all = results_all[m]["overall"]["MAE"]
+            mae_real = results_real[m]["overall"]["MAE"]
+            diff = mae_real - mae_all
+            sign = "+" if diff >= 0 else ""
+            print(f"{m:<30} | {mae_all:<16.4f} | {mae_real:<16.4f} | {sign}{diff:<11.4f}")
+        else:
+            mae_real = results_real[m]["overall"]["MAE"]
+            print(f"{m:<30} | {'[N/A Real Only]':<16} | {mae_real:<16.4f} | {'N/A':<11}")
     print("=" * 90)
 
     # 8. Print Official Benchmark Table (Real Observations Only, Clearly Labeled)
@@ -260,8 +278,11 @@ def main():
     print("-" * 88)
     display_names = {
         "Persistence": "Persistence (Naive Baseline)",
+        "SeasonalNaive_24h": "Seasonal Naive (24h Baseline)",
+        "SeasonalNaive_168h": "Seasonal Naive (168h Baseline)",
         "MovingAverage_24h": "Moving Average (24h Baseline)",
         "Ridge_alpha10": "Ridge Regression (alpha=10.0)",
+        "HistGradientBoosting": "HistGradientBoosting (Val-Tuned)",
         "Vanilla_RNN_L24_Tuned": "Vanilla RNN (L=24, Val-Tuned)",
         "LSTM_L24_Tuned": "LSTM (L=24, Val-Tuned)",
         "Vanilla_RNN_L72_Ablation": "Vanilla RNN (Ablation: L=72)"

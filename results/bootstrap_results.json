@@ -1,0 +1,50 @@
+{
+    "LSTM minus RNN (Seed 42)": {
+        "mean_diff": 0.6861600875854492,
+        "ci_95_lower": 0.027960515627637513,
+        "ci_95_upper": 1.2956580132246016,
+        "statistically_significant": true
+    },
+    "RNN minus Ridge (Seed 42)": {
+        "mean_diff": -1.6336733102798462,
+        "ci_95_lower": -2.3407425701618196,
+        "ci_95_upper": -0.9630199924111367,
+        "statistically_significant": true
+    },
+    "RNN minus Gradient Boosting (Seed 42)": {
+        "mean_diff": 0.3863886540253612,
+        "ci_95_lower": -0.5550745956350012,
+        "ci_95_upper": 1.3281590355546087,
+        "statistically_significant": false
+    },
+    "RNN minus Persistence (Seed 42)": {
+        "mean_diff": -4.417879104614258,
+        "ci_95_lower": -6.311902904510498,
+        "ci_95_upper": -2.641875362396241,
+        "statistically_significant": true
+    },
+    "LSTM minus RNN (5-Seed Ensemble)": {
+        "mean_diff": 0.6724381446838379,
+        "ci_95_lower": -0.0827695157378912,
+        "ci_95_upper": 1.3575757116079328,
+        "statistically_significant": false
+    },
+    "RNN minus Ridge (5-Seed Ensemble)": {
+        "mean_diff": -2.5629382133483887,
+        "ci_95_lower": -3.3268450677394865,
+        "ci_95_upper": -1.9141813844442368,
+        "statistically_significant": true
+    },
+    "RNN minus Gradient Boosting (5-Seed Ensemble)": {
+        "mean_diff": -0.5428761529040234,
+        "ci_95_lower": -1.5546559285486525,
+        "ci_95_upper": 0.4016508064131944,
+        "statistically_significant": false
+    },
+    "RNN minus Persistence (5-Seed Ensemble)": {
+        "mean_diff": -5.347143650054932,
+        "ci_95_lower": -7.309502530097961,
+        "ci_95_upper": -3.5537244677543645,
+        "statistically_significant": true
+    }
+}
