@@ -17,6 +17,7 @@ ENV/
 # PyTorch / checkpoints
 *.pt
 *.pth
+*.npy
 
 # OS files
 .DS_Store
