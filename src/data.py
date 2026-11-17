@@ -182,6 +182,52 @@ def create_sliding_windows(
     return X, Y
 
 
+def create_delta_targets(
+    Y: np.ndarray,
+    X: np.ndarray,
+    target_idx: int = 0
+) -> np.ndarray:
+    """
+    Compute multi-horizon deltas relative to the last observed historical target value.
+    
+    Explanation:
+    In atmospheric PM2.5 forecasting, the system possesses high physical inertia where
+    the immediate next state y_{t+1} is strongly correlated with current state y_t.
+    By targeting Delta_{t+h} = y_{t+h} - y_t, the network's natural shrinkage toward zero
+    corresponds to predicting persistence rather than unconditional historical mean.
+    
+    Parameters:
+        Y: Multi-horizon future target values, shape (N, horizon)
+        X: Historical input sequences, shape (N, lookback, num_features)
+        target_idx: Feature column index of the target variable in X
+        
+    Returns:
+        Delta targets array of shape (N, horizon)
+    """
+    # Extract the final historical observation timestep (t = lookback - 1)
+    last_observed_target = X[:, -1, target_idx : target_idx + 1]  # Shape: (N, 1)
+    # Broadcast subtraction across all future horizons: Delta_{t+h} = y_{t+h} - y_t
+    return Y - last_observed_target
+
+
+def reconstruct_predictions_from_delta(
+    delta_preds: np.ndarray,
+    X: np.ndarray,
+    target_idx: int = 0
+) -> np.ndarray:
+    """
+    Reconstruct multi-horizon physical/scaled predictions from predicted deltas.
+    
+    Formula:
+    hat{Y}_{t+h} = y_t + hat{Delta}_{t+h}
+    
+    When predicted delta is zero (e.g. uninformative signals or early training),
+    the reconstructed forecast automatically defaults to the persistence baseline.
+    """
+    last_observed_target = X[:, -1, target_idx : target_idx + 1]  # Shape: (N, 1)
+    return last_observed_target + delta_preds
+
+
 class AirQualityDataset(Dataset):
     """
     PyTorch Dataset wrapping sliding window inputs X and targets Y.

@@ -46,6 +46,8 @@ def load_benchmark_data():
         ("HistGradientBoosting", "HistGradientBoosting (Val-Tuned)"),
         ("Vanilla_RNN_L24_Tuned", "Vanilla RNN (L=24, Val-Tuned)"),
         ("LSTM_L24_Tuned", "LSTM (L=24, Val-Tuned)"),
+        ("Vanilla_RNN_Delta_L24", "Vanilla RNN (Delta L=24, Val-Selected)"),
+        ("LSTM_Delta_L24", "LSTM (Delta L=24, Val-Selected)"),
         ("Vanilla_RNN_L72_Ablation", "Vanilla RNN (Ablation: L=72)")
     ]
 

@@ -2,13 +2,14 @@
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-37%20passed-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-42%20passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 AirCast is a strictly leak-free, reproducible benchmark for multi-horizon fine particulate matter ($\text{PM}_{2.5}$) air quality forecasting up to 24 hours ahead ($t+1, \dots, t+24$). Built in PyTorch, it evaluates classical statistical heuristics, tree-based gradient boosting, and recurrent neural networks (Vanilla RNN and LSTM) on 5 years of hourly atmospheric observations from the UCI Beijing PM2.5 benchmark dataset.
 
 > **Evaluation Honesty Disclosure:**  
-> The test set was used for the initial evaluation and reused for multi-seed runs and the added baselines with frozen configurations; no hyperparameter was changed after viewing test results.
+> The test set was used for the initial evaluation and reused for multi-seed runs and the added baselines with frozen configurations; no hyperparameter was changed after viewing test results.  
+> Subsequently, following diagnostic analysis of the LSTM's weak $t+1$ performance on raw targets, the DELTA target formulation was explored and chosen **strictly on the Validation set**. The held-out test set was evaluated a second time with the validation-selected Delta setup, and this second use of the test set is explicitly disclosed throughout this document.
 
 ---
 
@@ -143,7 +144,63 @@ $$\Delta \text{MAE} = \text{MAE}_A - \text{MAE}_B$$
 
 ---
 
-## 6. Lookback Ablation: Validation vs. Test Disagreement
+## 6. Diagnosis of LSTM's Weak t+1 Result & Delta Target Formulation
+
+### 6.1 Diagnostic Findings: Why was LSTM Weak at t+1?
+In initial raw-target benchmarking, the tuned LSTM exhibited poor immediate-step accuracy ($t+1$ MAE: $21.17\,\mu\text{g/m}^3$ on test vs. $11.12\,\mu\text{g/m}^3$ for Persistence and $12.05\,\mu\text{g/m}^3$ for Vanilla RNN). Four factors explain this behavior:
+
+1. **Parameter Capacity vs. Learning Rate:**
+   The 2-layer LSTM has 56,088 trainable parameters compared to 15,192 in the 2-layer Vanilla RNN (~$3.7\times$ higher capacity due to input, forget, output, and cell candidate gates). With learning rate $\eta = 0.001$, the LSTM fits the training split rapidly—its training MSE drops from 0.6538 to 0.4349 in just 5 epochs, compared to the RNN's gradual descent from 0.6329 to 0.5416 over 7 epochs.
+2. **Early-Stopping Behavior & Restored Checkpoint:**
+   Validation loss for the LSTM reaches its minimum at **Epoch 1** (val MSE: 0.5898). On Epochs 2 through 5, validation loss degrades monotonically (0.6251, 0.6300, 0.6458, 0.6280). With `patience=4`, early stopping triggers at Epoch 5 and reloads the checkpoint from **Epoch 1**.
+3. **The Under-Trained Checkpoint Paradox:**
+   Although the LSTM begins overfitting the training split by Epoch 2, the restored **Epoch 1 checkpoint is functionally under-trained (underfit)**. At Epoch 1, the model has undergone only a single pass over the training data; its recurrent gates and memory cells have barely updated from random initialization and have not learned the strong lag-1 autocorrelation ($y_{t+1} \approx y_t$).
+4. **Multi-Horizon Loss Dilution:**
+   The training objective minimizes MSE averaged across all 24 horizons: $\mathcal{L} = \frac{1}{24}\sum_{h=1}^{24}(y_{t+h} - \hat{y}_{t+h})^2$. Horizons $h \in [6, 24]$ exhibit substantial variance ($\sigma \approx 85\text{--}90\,\mu\text{g/m}^3$). An under-trained network minimizing average MSE outputs a smoothed conditional trajectory biased toward the global mean ($\approx 98.6\,\mu\text{g/m}^3$), which incurs a catastrophic penalty at $t+1$ whenever true pollution is low (e.g. $10\text{--}30\,\mu\text{g/m}^3$) or high ($200\text{--}400\,\mu\text{g/m}^3$). In contrast, Vanilla RNN trains stably for 7–13 epochs, allowing its simpler recurrent weights to anchor tightly to the recent observation.
+
+---
+
+### 6.2 Concept: Delta Target Formulation (Residual Learning)
+The Delta target formulation redefines the multi-horizon forecasting problem by predicting changes relative to the most recent historical observation rather than absolute pollutant levels. In standard forecasting, minimizing mean squared error across 24 horizons causes models to predict a smoothed conditional mean that struggles to anchor tightly to the latest measurement. By defining the target as the delta from the last known value, predicting zero change naturally defaults to the persistence baseline. During inference, future concentrations are reconstructed by adding the predicted deltas back to the final lookback timestep:
+$$\Delta_{t+h} = y_{t+h} - y_t \quad \implies \quad \hat{y}_{t+h} = y_t + \hat{\Delta}_{t+h}$$
+This embeds a strong persistence inductive bias without altering network architectures or parameter budgets.
+
+---
+
+### 6.3 Validation-Only Selection (Raw vs. Delta Targets)
+To prevent data leakage, the choice between Raw and Delta formulations was evaluated and selected **strictly on the Validation set** using frozen hyperparameters ($L=24$, hidden=64, layers=2, dropout=0.2, lr=0.001, batch=128, patience=4):
+
+| Model & Target Setup | Best Epoch | Val MSE Loss | Overall Val MAE ($\mu\text{g/m}^3$) | $t+1$ Val MAE | $t+6$ Val MAE | $t+12$ Val MAE | $t+24$ Val MAE |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Vanilla RNN (Raw Target) | 3/7 | 0.5862 | 47.4301 | 13.8350 | 38.3062 | 50.8507 | 62.6589 |
+| **Vanilla RNN (Delta Target)** | **3/7** | **0.5788** | **47.2094** | **12.5799** | 38.3727 | 50.5107 | 62.6229 |
+| LSTM (Raw Target) | 1/5 | 0.5898 | 48.2836 | 23.4269 | 39.6323 | 50.8799 | 62.7107 |
+| **LSTM (Delta Target)** | **1/5** | **0.5842** | **47.4042** | **12.7066** | 38.8168 | 51.1235 | 62.5859 |
+
+**Validation Decision:** The **Delta target formulation was chosen for both models** because it achieved strictly lower validation MSE and overall MAE, while cutting LSTM $t+1$ validation error from $23.43\,\mu\text{g/m}^3$ to $12.71\,\mu\text{g/m}^3$ (a 45.8% reduction).
+
+---
+
+### 6.4 Final Test Set Evaluation with Chosen Setup (Second Use of Test Set)
+> **Explicit Disclosure:** The held-out test set was evaluated once with the validation-selected Delta models. This constitutes a **second use of the test set** after initial reporting; all modeling decisions between raw and delta targets were chosen strictly on validation.
+
+Evaluated on the held-out test set ($N=5,839$ real observation windows):
+
+| Model | Overall MAE ($\mu\text{g/m}^3$) | Overall RMSE ($\mu\text{g/m}^3$) | Overall $R^2$ | $t+1$ MAE | $t+6$ MAE | $t+12$ MAE | $t+24$ MAE |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Persistence (Naive Baseline) | 44.5884 | 69.4731 | 0.2143 | 11.1192 | 35.5110 | 48.7571 | 59.0966 |
+| Vanilla RNN (Raw L=24, Val-Tuned) | 40.1705 | 58.9300 | 0.4347 | 12.0478 | 32.3587 | 43.0546 | 52.9862 |
+| **Vanilla RNN (Delta L=24, Val-Selected)** | 40.2627 | 58.9893 | 0.4335 | **10.9671** | 32.2987 | 42.8411 | 53.4841 |
+| LSTM (Raw L=24, Val-Tuned) | 40.8567 | 59.1379 | 0.4307 | 21.1678 | 34.1671 | 42.4470 | 52.4101 |
+| **LSTM (Delta L=24, Val-Selected)** | **40.2274** | **58.7941** | **0.4373** | **11.0439** | 33.1458 | 43.3392 | 52.7930 |
+
+**Takeaways from the Delta Formulation:**
+1. **$t+1$ Accuracy Restored:** Under the Delta formulation, the LSTM's $t+1$ test error falls from $21.17\,\mu\text{g/m}^3$ to **$11.04\,\mu\text{g/m}^3$** (a 47.8% drop), beating Persistence ($11.12\,\mu\text{g/m}^3$). Vanilla RNN also improves to **$10.97\,\mu\text{g/m}^3$**, outperforming Persistence at horizon 1.
+2. **Overall LSTM Metrics Improved:** Overall test MAE for LSTM drops from $40.86$ to **$40.23\,\mu\text{g/m}^3$**, Overall RMSE falls from $59.14$ to **$58.79\,\mu\text{g/m}^3$**, and $R^2$ improves from $0.4307$ to **$0.4373$**.
+
+---
+
+## 7. Lookback Ablation: Validation vs. Test Disagreement
 
 During hyperparameter tuning on the **Validation set**, $L=24$ performed better than $L=72$:
 - **Validation:** Vanilla RNN $L=24$ (**Val MAE: 47.4301**) beat $L=72$ (**Val MAE: 48.7534**).
@@ -153,7 +210,7 @@ During hyperparameter tuning on the **Validation set**, $L=24$ performed better 
 
 ---
 
-## 7. Honest Limitations
+## 8. Honest Limitations
 
 1. **Single Monitoring Station:** Data originates from a single sensor on the roof of the US Embassy in Chaoyang District, Beijing. Local traffic microclimates and street-canyon effects are not captured, and spatial generalization across the metropolitan area cannot be assessed.
 2. **Single Climate Basin:** Beijing lies in an alluvial plain surrounded by the Yanshan and Taihang mountains, creating a semi-enclosed basin prone to severe winter temperature inversions and spring Gobi dust storms. Dynamics do not directly transfer to coastal, equatorial, or windy maritime cities.
@@ -163,7 +220,7 @@ During hyperparameter tuning on the **Validation set**, $L=24$ performed better 
 
 ---
 
-## 8. Visualizations
+## 9. Visualizations
 
 | Per-Horizon Error Bar Chart | Sample 24h Multi-Step Trajectories |
 | :---: | :---: |
@@ -173,7 +230,7 @@ During hyperparameter tuning on the **Validation set**, $L=24$ performed better 
 
 ---
 
-## 9. How to Run
+## 10. How to Run
 
 ### Setup Environment
 ```powershell
@@ -194,7 +251,7 @@ Reproduces data ingestion, baselines, GBDT tuning, RNN/LSTM training, multi-seed
 python scripts/run_all.py
 ```
 
-### Run Unit and Integration Tests (37 Tests)
+### Run Unit and Integration Tests (42 Tests)
 ```powershell
 python -m pytest tests/
 ```
@@ -207,7 +264,7 @@ streamlit run app.py
 
 ---
 
-## 10. Repository File Structure
+## 11. Repository File Structure
 
 ```text
 AirCast/
@@ -226,6 +283,8 @@ AirCast/
 ├── results/
 │   ├── baselines_val_results.json
 │   ├── bootstrap_results.json      # 95% Block bootstrap confidence intervals
+│   ├── delta_target_results.json   # Test metrics for Delta models
+│   ├── delta_validation_comparison.json # Validation comparison (Raw vs Delta)
 │   ├── final_test_metrics.csv      # Test metrics table on real observations
 │   ├── final_test_metrics.json     # Test metrics with missingness metadata
 │   ├── multiseed_results.json      # 5-seed empirical mean & std
@@ -240,13 +299,14 @@ AirCast/
 │   ├── train_lstm.py               # LSTM training loop
 │   ├── tune_and_ablate.py          # Validation-only hyperparameter tuning
 │   ├── tune_and_train_new_baselines.py # Seasonal Naive & HistGBDT tuning
+│   ├── evaluate_delta_target.py    # Delta target formulation study
 │   ├── run_multiseed_evaluation.py # 5-seed retraining & variance reporting
 │   ├── run_block_bootstrap.py      # Moving block bootstrap 95% CIs
 │   ├── evaluate_test.py            # Final test evaluation on real targets
 │   └── generate_plots.py           # Publication-quality plotting script
 ├── src/
 │   ├── baselines.py                # Persistence, Seasonal Naive, MA, Ridge, HistGBDT
-│   ├── data.py                     # Split, scale, cyclical encode, window
+│   ├── data.py                     # Split, scale, cyclical encode, window, delta targets
 │   ├── metrics.py                  # MAE, RMSE, R2, sMAPE calculations
 │   ├── models/
 │   │   ├── vanilla_rnn.py          # PyTorch Elman RNN architecture
@@ -257,10 +317,12 @@ AirCast/
     ├── test_app.py                 # Dashboard data loader unit tests
     ├── test_baselines_metrics.py
     ├── test_data.py
+    ├── test_delta_target.py        # Delta targets and inversion unit tests
     ├── test_evaluation.py
     ├── test_leakage_and_alignment.py
     ├── test_lstm.py
     ├── test_new_comparisons.py
+    ├── test_run_all.py
     ├── test_tuning.py
     ├── test_utils.py
     └── test_vanilla_rnn.py

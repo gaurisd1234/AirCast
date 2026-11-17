@@ -12,14 +12,15 @@ import time
 
 
 STEPS_FULL = [
-    ("Step 1/8: Ingest & Preprocess Data", [sys.executable, "scripts/prepare_data.py"]),
-    ("Step 2/8: Classical Baselines (Persistence, MA, Ridge)", [sys.executable, "scripts/run_baselines.py"]),
-    ("Step 3/8: Train Vanilla RNN (Validation Early Stopping)", [sys.executable, "scripts/train_vanilla_rnn.py"]),
-    ("Step 4/8: Train LSTM (Validation Early Stopping)", [sys.executable, "scripts/train_lstm.py"]),
-    ("Step 5/8: New Baselines (Seasonal Naive, HistGBDT)", [sys.executable, "scripts/tune_and_train_new_baselines.py"]),
-    ("Step 6/8: Final Test Evaluation (Real Observations)", [sys.executable, "scripts/evaluate_test.py"]),
-    ("Step 7/8: Block Bootstrap 95% Confidence Intervals", [sys.executable, "scripts/run_block_bootstrap.py"]),
-    ("Step 8/8: Generate Publication Plots", [sys.executable, "scripts/generate_plots.py"]),
+    ("Step 1/9: Ingest & Preprocess Data", [sys.executable, "scripts/prepare_data.py"]),
+    ("Step 2/9: Classical Baselines (Persistence, MA, Ridge)", [sys.executable, "scripts/run_baselines.py"]),
+    ("Step 3/9: Train Vanilla RNN (Validation Early Stopping)", [sys.executable, "scripts/train_vanilla_rnn.py"]),
+    ("Step 4/9: Train LSTM (Validation Early Stopping)", [sys.executable, "scripts/train_lstm.py"]),
+    ("Step 5/9: New Baselines (Seasonal Naive, HistGBDT)", [sys.executable, "scripts/tune_and_train_new_baselines.py"]),
+    ("Step 6/9: Final Test Evaluation (Real Observations)", [sys.executable, "scripts/evaluate_test.py"]),
+    ("Step 7/9: Delta Target Formulation (Val Selection & Test)", [sys.executable, "scripts/evaluate_delta_target.py"]),
+    ("Step 8/9: Block Bootstrap 95% Confidence Intervals", [sys.executable, "scripts/run_block_bootstrap.py"]),
+    ("Step 9/9: Generate Publication Plots", [sys.executable, "scripts/generate_plots.py"]),
 ]
 
 
