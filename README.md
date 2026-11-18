@@ -234,7 +234,7 @@ During hyperparameter tuning on the **Validation set**, $L=24$ performed better 
 
 ### Setup Environment
 ```powershell
-git clone https://github.com/your-username/AirCast.git
+git clone https://github.com/gaurisd1234/AirCast.git
 cd AirCast
 pip install -r requirements.txt
 ```
