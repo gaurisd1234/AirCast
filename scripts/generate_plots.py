@@ -2,6 +2,7 @@
 Generate comprehensive publication-quality visualization plots for AirCast.
 Saves all figures to figures/ using repository-relative paths.
 Headline models match validation-selected configurations; L=72 is labeled as ablation.
+All text labels use plain Unicode (µg/m³) without mathtext ($...$) to ensure full font compatibility.
 """
 
 import os
@@ -14,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend for headless environments
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from src.utils import load_config
 
 
@@ -41,7 +43,9 @@ def main():
         ("HistGradientBoosting", "HistGradientBoosting (Val-Tuned)", "#17becf"),
         ("Vanilla_RNN_L24_Tuned", "Vanilla RNN (L=24, Val-Tuned)", "#ff7f0e"),
         ("LSTM_L24_Tuned", "LSTM (L=24, Val-Tuned)", "#2ca02c"),
-        ("Vanilla_RNN_L72_Ablation", "Vanilla RNN (Ablation: L=72)", "#9467bd")
+        ("Vanilla_RNN_Delta_L24", "Vanilla RNN (Delta L=24, Val-Selected)", "#d62728"),
+        ("LSTM_Delta_L24", "LSTM (Delta L=24, Val-Selected)", "#9467bd"),
+        ("Vanilla_RNN_L72_Ablation", "Vanilla RNN (Ablation: L=72)", "#8c564b")
     ]
 
     predictions = {}
@@ -51,29 +55,32 @@ def main():
             predictions[model_key] = np.load(pred_file)
 
     # -------------------------------------------------------------
-    # Plot 1: Per-Horizon MAE Comparison Bar Chart
+    # Plot 1: Per-Horizon MAE Comparison Bar Chart (Focal Horizons)
     # -------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(12, 6))
     horizons = ["t+1", "t+6", "t+12", "t+24"]
     x = np.arange(len(horizons))
-    width = 0.11
+    width = 0.09
 
-    for idx, (m_key, m_label, color) in enumerate(models_to_plot):
-        if m_key in test_metrics:
-            maes = [test_metrics[m_key]["per_horizon"][h]["MAE"] for h in horizons]
-            ax.bar(x + (idx - 3.0) * width, maes, width, label=m_label, color=color, alpha=0.85)
+    plotted_models = [m for m in models_to_plot if m[0] in test_metrics]
+    n_models = len(plotted_models)
 
-    ax.set_ylabel("Mean Absolute Error (μg/m³)", fontsize=12, fontweight="bold")
+    for idx, (m_key, m_label, color) in enumerate(plotted_models):
+        maes = [test_metrics[m_key]["per_horizon"][h]["MAE"] for h in horizons]
+        offset = (idx - (n_models - 1) / 2.0) * width
+        ax.bar(x + offset, maes, width, label=m_label, color=color, alpha=0.85)
+
+    ax.set_ylabel("Mean Absolute Error (µg/m³)", fontsize=12, fontweight="bold")
     ax.set_xlabel("Forecast Horizon", fontsize=12, fontweight="bold")
     ax.set_title("Multi-Horizon Forecasting Error Comparison on Held-Out Test Set (Real Observations)", fontsize=13, fontweight="bold")
     ax.set_xticks(x)
     ax.set_xticklabels(horizons, fontsize=11)
-    ax.legend(frameon=True, fontsize=9, loc="upper left")
+    ax.legend(frameon=True, fontsize=8.5, loc="upper left")
     ax.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
     for out_dir in [figures_dir, os.path.join(results_dir, "plots")]:
         plt.savefig(os.path.join(out_dir, "per_horizon_mae_comparison.png"), dpi=200)
-    plt.close()
+    plt.close(fig)
     print("[Plot 1] Saved: figures/per_horizon_mae_comparison.png")
 
     # -------------------------------------------------------------
@@ -91,7 +98,7 @@ def main():
                 linestyle = ":" if "Ablation" in m_label else "--"
                 ax.plot(horizon_steps, predictions[m_key][s_idx], linestyle=linestyle, linewidth=1.8, label=m_label, color=color)
 
-        ax.set_ylabel("PM2.5 (μg/m³)", fontsize=11)
+        ax.set_ylabel("PM2.5 (µg/m³)", fontsize=11)
         ax.set_title(f"Episode {i+1} (Sample #{s_idx}): 24-Hour Multi-Horizon Forecast Trajectory", fontsize=12, fontweight="bold")
         ax.grid(True, linestyle=":", alpha=0.6)
         if i == 0:
@@ -102,7 +109,7 @@ def main():
     plt.tight_layout()
     for out_dir in [figures_dir, os.path.join(results_dir, "plots")]:
         plt.savefig(os.path.join(out_dir, "forecast_trajectories_sample.png"), dpi=200)
-    plt.close()
+    plt.close(fig)
     print("[Plot 2] Saved: figures/forecast_trajectories_sample.png")
 
     # -------------------------------------------------------------
@@ -124,18 +131,18 @@ def main():
             ax.hist(residuals, bins=60, range=(-150, 150), color=color, alpha=0.75, edgecolor="black", density=True)
             ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="Zero Error")
             ax.axvline(mean_err, color="blue", linestyle="-", linewidth=1.5, label=f"Mean: {mean_err:.2f}")
-            ax.set_title(f"{m_label}\n(Std: {std_err:.2f} μg/m³)", fontsize=11, fontweight="bold")
-            ax.set_xlabel("Residual (True - Pred) [μg/m³]", fontsize=10)
+            ax.set_title(f"{m_label}\n(Std: {std_err:.2f} µg/m³)", fontsize=11, fontweight="bold")
+            ax.set_xlabel("Residual (True - Pred) [µg/m³]", fontsize=10)
             if i == 0:
                 ax.set_ylabel("Probability Density", fontsize=10)
             ax.legend(fontsize=9)
             ax.grid(True, linestyle=":", alpha=0.5)
 
-    plt.suptitle("Residual Error Distributions on Real Observations (Held-Out Test Set)", fontsize=13, fontweight="bold")
+    fig.suptitle("Residual Error Distributions on Real Observations (Held-Out Test Set)", fontsize=13, fontweight="bold")
     plt.tight_layout()
     for out_dir in [figures_dir, os.path.join(results_dir, "plots")]:
         plt.savefig(os.path.join(out_dir, "residual_distributions.png"), dpi=200)
-    plt.close()
+    plt.close(fig)
     print("[Plot 3] Saved: figures/residual_distributions.png")
 
     # -------------------------------------------------------------
@@ -169,12 +176,48 @@ def main():
         ax.legend()
         ax.grid(True, linestyle=":", alpha=0.6)
 
-        plt.suptitle("Training and Validation Loss Dynamics (Scaled MSE)", fontsize=13, fontweight="bold")
+        fig.suptitle("Training and Validation Loss Dynamics (Scaled MSE)", fontsize=13, fontweight="bold")
         plt.tight_layout()
         for out_dir in [figures_dir, os.path.join(results_dir, "plots")]:
             plt.savefig(os.path.join(out_dir, "training_loss_curves.png"), dpi=200)
-        plt.close()
+        plt.close(fig)
         print("[Plot 4] Saved: figures/training_loss_curves.png")
+
+    # -------------------------------------------------------------
+    # Plot 5: Per-Horizon Progression (All 24 Horizons Step-by-Step)
+    # -------------------------------------------------------------
+    per_h_csv = os.path.join(results_dir, "per_horizon_all.csv")
+    if os.path.exists(per_h_csv):
+        df_per_h = pd.read_csv(per_h_csv)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        horizon_steps = np.arange(1, 25)
+
+        line_configs = [
+            ("Persistence", "Persistence (Naive)", "#7f7f7f", "-"),
+            ("MovingAverage_24h", "Moving Average (24h)", "#bcbd22", ":"),
+            ("Ridge_alpha10", "Ridge Regression (alpha=10)", "#1f77b4", "--"),
+            ("HistGradientBoosting", "HistGradientBoosting (Val-Tuned)", "#17becf", "-."),
+            ("Vanilla_RNN_L24_Tuned", "Vanilla RNN (L=24, Val-Tuned)", "#ff7f0e", "-"),
+            ("LSTM_L24_Tuned", "LSTM (L=24, Val-Tuned)", "#2ca02c", "-"),
+            ("Vanilla_RNN_Delta_L24", "Vanilla RNN (Delta L=24, Val-Selected)", "#d62728", "-"),
+            ("LSTM_Delta_L24", "LSTM (Delta L=24, Val-Selected)", "#9467bd", "-"),
+            ("Vanilla_RNN_L72_Ablation", "Vanilla RNN (Ablation: L=72)", "#8c564b", ":")
+        ]
+
+        for col, label, color, ls in line_configs:
+            if col in df_per_h.columns:
+                ax.plot(horizon_steps, df_per_h[col], marker="o", markersize=3, label=label, color=color, linestyle=ls)
+
+        ax.set_xlabel("Forecast Horizon Step (Hours Ahead: t+1 to t+24)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Mean Absolute Error (µg/m³)", fontsize=11, fontweight="bold")
+        ax.set_title("Per-Horizon MAE Progression Across 24 Forecast Steps (April – December 2014)", fontsize=12, fontweight="bold")
+        ax.grid(True, linestyle=":", alpha=0.6)
+        ax.legend(frameon=True, fontsize=8.5, loc="upper left")
+        plt.tight_layout()
+        for out_dir in [figures_dir, os.path.join(results_dir, "plots")]:
+            plt.savefig(os.path.join(out_dir, "per_horizon_mae_progression.png"), dpi=200)
+        plt.close(fig)
+        print("[Plot 5] Saved: figures/per_horizon_mae_progression.png")
 
     print("\nAll visualization plots generated successfully in figures/ and results/plots/")
 

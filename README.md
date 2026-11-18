@@ -222,11 +222,13 @@ During hyperparameter tuning on the **Validation set**, $L=24$ performed better 
 
 ## 9. Visualizations
 
-| Per-Horizon Error Bar Chart | Sample 24h Multi-Step Trajectories |
+| Per-Horizon Error Bar Chart | 24-Hour Horizon Progression |
 | :---: | :---: |
-| ![Per-Horizon MAE Comparison](figures/per_horizon_mae_comparison.png) | ![Sample Trajectories](figures/forecast_trajectories_sample.png) |
-| **Residual Error Distributions** | **Training Loss Dynamics & Early Stopping** |
-| ![Residual Distributions](figures/residual_distributions.png) | ![Training Loss Curves](figures/training_loss_curves.png) |
+| ![Per-Horizon MAE Comparison](figures/per_horizon_mae_comparison.png) | ![Per-Horizon MAE Progression](figures/per_horizon_mae_progression.png) |
+| **Sample 24h Multi-Step Trajectories** | **Residual Error Distributions** |
+| ![Sample Trajectories](figures/forecast_trajectories_sample.png) | ![Residual Distributions](figures/residual_distributions.png) |
+| **Training Loss Dynamics & Early Stopping** | |
+| ![Training Loss Curves](figures/training_loss_curves.png) | |
 
 ---
 
@@ -278,6 +280,7 @@ AirCast/
 ├── figures/                        # Repository-relative visualization figures
 │   ├── forecast_trajectories_sample.png
 │   ├── per_horizon_mae_comparison.png
+│   ├── per_horizon_mae_progression.png
 │   ├── residual_distributions.png
 │   └── training_loss_curves.png
 ├── results/
